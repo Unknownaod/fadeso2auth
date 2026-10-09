@@ -1,0 +1,478 @@
+/* =========================================================
+   APPEND THIS TO THE END OF globals.css
+   Auth screen, account page, badges, client-type picker
+   ========================================================= */
+
+/* ---------- avatar (image support) ---------- */
+
+.fd-user-avatar {
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.fd-user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ---------- auth screen ---------- */
+
+.fd-auth-shell {
+  align-items: center;
+  justify-content: center;
+}
+
+.fd-splash {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: auto;
+  color: #a1a1b5;
+  font-size: 12px;
+}
+
+.fd-auth-wrap {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(100%, 440px);
+  padding: 32px 18px;
+  margin: auto;
+  animation: fd-rise .45s ease both;
+}
+
+.fd-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 26px;
+}
+
+.fd-auth-card {
+  width: 100%;
+  padding: 26px;
+  border: 1px solid rgba(139,124,255,.23);
+  border-radius: 23px;
+  background:
+    radial-gradient(ellipse at 5% 0%, rgba(139,124,255,.13), transparent 45%),
+    linear-gradient(155deg, rgba(27,27,43,.96), rgba(13,13,23,.98));
+  box-shadow: 0 35px 110px rgba(0,0,0,.55), inset 0 1px rgba(255,255,255,.06);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.fd-auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 22px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 12px;
+  background: rgba(0,0,0,.2);
+}
+
+.fd-auth-tabs button {
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #9a9ab0;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background .18s, color .18s, border-color .18s;
+}
+
+.fd-auth-tabs button:hover {
+  color: #fff;
+}
+
+.fd-auth-tabs button.active {
+  border-color: rgba(139,124,255,.25);
+  background: rgba(139,124,255,.15);
+  color: #fff;
+}
+
+.fd-auth-title h1 {
+  margin: 0 0 7px;
+  color: #f0effa;
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -.045em;
+}
+
+.fd-auth-title p {
+  margin: 0 0 20px;
+  color: #9999ae;
+  font-size: 11px;
+  line-height: 1.75;
+}
+
+.fd-password-field {
+  position: relative;
+}
+
+.fd-password-field input {
+  padding-right: 44px;
+}
+
+.fd-password-field .fd-icon-button {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+}
+
+.fd-auth-submit {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 4px;
+}
+
+.fd-auth-switch {
+  margin: 18px 0 0;
+  color: #85859b;
+  font-size: 11px;
+  text-align: center;
+}
+
+.fd-auth-switch button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #b6abff;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.fd-auth-switch button:hover {
+  color: #fff;
+}
+
+.fd-auth-foot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 20px;
+  color: #66667a;
+  font-size: 10px;
+  text-align: center;
+}
+
+/* ---------- sidebar user + topbar account ---------- */
+
+.fd-sidebar-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fd-sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(139,124,255,.14);
+  border-radius: 13px;
+  background: rgba(139,124,255,.05);
+}
+
+.fd-sidebar-user > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+
+.fd-sidebar-user strong,
+.fd-sidebar-user small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fd-sidebar-user strong {
+  color: #e6e6f2;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.fd-sidebar-user small {
+  color: var(--fd-faint);
+  font-size: 10px;
+}
+
+.fd-sidebar-user .fd-mini-button:hover {
+  border-color: rgba(255,100,120,.19);
+  background: rgba(255,100,120,.08);
+  color: #ff8190;
+}
+
+.fd-topbar-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.fd-topbar-name {
+  max-width: 140px;
+  overflow: hidden;
+  color: #c4c4d6;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fd-topbar-account:hover .fd-topbar-name {
+  color: #fff;
+}
+
+/* ---------- badges ---------- */
+
+.fd-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-left: 8px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 5px;
+  background: rgba(255,255,255,.04);
+  color: #8a8aa0;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 750;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.fd-badge-blue {
+  border-color: rgba(94,200,255,.2);
+  background: rgba(94,200,255,.08);
+  color: #8edaff;
+}
+
+.fd-badge-green {
+  border-color: rgba(61,220,151,.2);
+  background: rgba(61,220,151,.07);
+  color: #8fe8bd;
+}
+
+/* ---------- account page ---------- */
+
+.fd-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 22px;
+}
+
+.fd-profile-avatar {
+  border-radius: 20px;
+}
+
+.fd-profile-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.fd-profile-copy h2 {
+  margin: 0 0 8px;
+  overflow: hidden;
+  color: #f0effa;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fd-profile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  color: #9999ae;
+  font-size: 11px;
+}
+
+.fd-profile-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.fd-grant-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 15px;
+  padding: 15px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.055);
+}
+
+.fd-grant-row:last-child {
+  border-bottom: 0;
+}
+
+.fd-grant-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.fd-grant-scopes code {
+  padding: 3px 7px;
+  border: 1px solid rgba(139,124,255,.18);
+  border-radius: 6px;
+  background: rgba(139,124,255,.08);
+  color: #b8adff;
+  font-family: ui-monospace, monospace;
+  font-size: 9px;
+}
+
+.fd-danger-small {
+  min-height: 33px;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.fd-lifetimes-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+/* ---------- app rows with badges ---------- */
+
+.fd-app-identity-copy strong {
+  display: flex;
+  align-items: center;
+}
+
+.fd-app-identity-copy strong .fd-badge {
+  flex: 0 0 auto;
+}
+
+/* ---------- create form extras ---------- */
+
+.fd-client-type {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.fd-client-type button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 11px;
+  background: rgba(255,255,255,.025);
+  color: #a4a4b7;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s, background .18s;
+}
+
+.fd-client-type button strong {
+  color: #e6e6f2;
+  font-size: 11px;
+}
+
+.fd-client-type button small {
+  color: #77778e;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.fd-client-type button:hover {
+  border-color: rgba(139,124,255,.3);
+}
+
+.fd-client-type button.active {
+  border-color: rgba(139,124,255,.6);
+  background: rgba(139,124,255,.1);
+  box-shadow: 0 0 0 3px rgba(139,124,255,.08);
+}
+
+.fd-client-type button.active svg {
+  color: #b4aaff;
+}
+
+.fd-modal .fd-alert {
+  margin-bottom: 16px;
+}
+
+.fd-form-warning {
+  border-color: rgba(255,193,109,.2);
+  background: rgba(255,193,109,.05);
+  color: #d9c3a0;
+}
+
+.fd-form-warning > svg {
+  color: #ffc16b;
+}
+
+.fd-form-warning strong {
+  color: #ffdaa1;
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 1000px) {
+  .fd-lifetimes-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .fd-topbar-name {
+    display: none;
+  }
+
+  .fd-profile-card {
+    flex-wrap: wrap;
+  }
+
+  .fd-profile-card > .fd-secondary-button {
+    width: 100%;
+  }
+
+  .fd-grant-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .fd-grant-scopes {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .fd-lifetimes-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  .fd-auth-card {
+    padding: 20px;
+    border-radius: 19px;
+  }
+
+  .fd-client-type {
+    grid-template-columns: 1fr;
+  }
+}
