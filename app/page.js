@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import "./developer.css";
+import "./globals.css";
 
 const API_URL = (
   process.env.NEXT_PUBLIC_API_URL || "https://api.fades.lol"
