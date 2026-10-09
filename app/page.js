@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./globals.css";
 
 /* =========================================================
@@ -16,7 +16,13 @@ const OAUTH_URL = `${API_URL}/oauth`;
 const DISCOVERY_URL = `${OAUTH_URL}/.well-known/openid-configuration`;
 const JWKS_URL = `${OAUTH_URL}/jwks`;
 
-const LIMITS = { apps: 20, redirectUris: 10, nameLength: 60 };
+const LIMITS = {
+  apps: 20,
+  redirectUris: 10,
+  nameLength: 60,
+  iconInputBytes: 10 * 1024 * 1024, // largest file we'll accept before resizing
+  iconSize: 256, // icons are center-cropped + resized to 256x256 before upload
+};
 
 const NAVIGATION = [
   { id: "overview", label: "Overview", icon: "grid" },
@@ -37,6 +43,9 @@ const LIFETIMES = [
   { id: "30 days", label: "Refresh token", description: "Rotated on every use. The previous token stops working." },
   { id: "5 minutes", label: "ID token", description: "RS256 JWT issued only with the authorization code exchange." },
 ];
+
+const EMPTY_FORM = { name: "", redirectUris: "", isPublic: false };
+const EMPTY_ICON = { blob: null, remoteUrl: null, preview: null };
 
 /* =========================================================
    ICONS
@@ -69,6 +78,8 @@ function Icon({ name, size = 18 }) {
     logout: <><path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5M16 8l4 4-4 4M9 12h11" /></>,
     mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></>,
     link: <><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>,
+    image: <><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="1.8" /><path d="m21 16-5-5-8 8" /></>,
+    upload: <><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></>,
   };
 
   return (
@@ -154,6 +165,102 @@ function validateRedirectUri(uri) {
 }
 
 /* =========================================================
+   APP ICON HELPERS (Cloudflare R2 via the API)
+   =========================================================
+   Flow:
+   - Picked/dropped files are center-cropped and resized to 256x256 in the
+     browser, then uploaded straight to R2 with a presigned PUT URL that the
+     API hands out (POST /oauth/uploads/icon). The image bytes never go
+     through the API server.
+   - Pasted image URLs are imported server-side (POST /oauth/uploads/icon-url)
+     because browsers can't fetch most third-party images (CORS). The server
+     downloads, validates, and stores it in R2.
+   - Either way the API returns a public URL, which is sent as `iconUrl`
+     when the application is created.
+   ========================================================= */
+
+function validateIconUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+}
+
+function loadImageElement(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("That file couldn't be read as an image."));
+    image.src = source;
+  });
+}
+
+async function fileToSquareBlob(file, size = LIMITS.iconSize) {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadImageElement(objectUrl);
+    const side = Math.min(image.naturalWidth, image.naturalHeight);
+    if (!side) throw new Error("That image has no size.");
+
+    const sx = (image.naturalWidth - side) / 2;
+    const sy = (image.naturalHeight - side) / 2;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(image, sx, sy, side, side, 0, 0, size, size);
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.9));
+    if (!blob) throw new Error("Could not process that image.");
+    return blob;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function uploadIconBlob(blob) {
+  const signed = await request("/oauth/uploads/icon", {
+    method: "POST",
+    body: { contentType: blob.type || "image/webp", size: blob.size },
+  });
+
+  if (!signed.ok || !signed.data.uploadUrl || !signed.data.publicUrl) {
+    const error = new Error(errorOf(signed, "Could not start the icon upload."));
+    error.status = signed.status;
+    throw error;
+  }
+
+  // Straight to R2 — no cookies, the presigned URL carries the authorization.
+  const put = await fetch(signed.data.uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": blob.type || "image/webp" },
+    body: blob,
+  });
+
+  if (!put.ok) throw new Error(`Icon upload failed (${put.status}).`);
+  return signed.data.publicUrl;
+}
+
+async function importIconFromUrl(url) {
+  const result = await request("/oauth/uploads/icon-url", {
+    method: "POST",
+    body: { url },
+  });
+
+  if (!result.ok || !result.data.publicUrl) {
+    const error = new Error(errorOf(result, "Could not import that image URL."));
+    error.status = result.status;
+    throw error;
+  }
+
+  return result.data.publicUrl;
+}
+
+/* =========================================================
    SMALL COMPONENTS
    ========================================================= */
 
@@ -203,9 +310,213 @@ function Avatar({ user, size = 32, className = "" }) {
   );
 }
 
-function AppIcon({ name, index = 0 }) {
+function AppIcon({ name, index = 0, src = null, size }) {
+  const [broken, setBroken] = useState(false);
   const initial = (name || "").trim().slice(0, 1).toUpperCase();
-  return <div className={`fd-app-icon fd-app-icon-${index % 5}`}>{initial || ""}</div>;
+  const showImage = src && !broken;
+
+  useEffect(() => { setBroken(false); }, [src]);
+
+  return (
+    <div
+      className={`fd-app-icon fd-app-icon-${index % 5} ${showImage ? "fd-app-icon-image" : ""}`}
+      style={size ? { width: size, height: size, fontSize: Math.round(size * 0.42) } : undefined}
+    >
+      {showImage ? (
+        <img src={src} alt="" onError={() => setBroken(true)} />
+      ) : (
+        initial || ""
+      )}
+    </div>
+  );
+}
+
+/* Drag & drop / click / paste / URL icon picker used by "Create application" */
+function IconPicker({ name, icon, onChange, onError, disabled }) {
+  const fileInput = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [urlDraft, setUrlDraft] = useState("");
+  const [showUrl, setShowUrl] = useState(false);
+  const dragDepth = useRef(0);
+
+  // Free blob preview URLs when they're replaced or the picker unmounts.
+  const lastPreview = useRef(null);
+  useEffect(() => {
+    const previous = lastPreview.current;
+    lastPreview.current = icon.preview;
+    if (previous && previous !== icon.preview && previous.startsWith("blob:")) {
+      URL.revokeObjectURL(previous);
+    }
+  }, [icon.preview]);
+  useEffect(() => () => {
+    if (lastPreview.current?.startsWith("blob:")) URL.revokeObjectURL(lastPreview.current);
+  }, []);
+
+  async function acceptFile(file) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return onError("That file isn't an image.");
+    if (file.size > LIMITS.iconInputBytes) return onError("Choose an image under 10 MB.");
+
+    setProcessing(true);
+    try {
+      const blob = await fileToSquareBlob(file);
+      onChange({ blob, remoteUrl: null, preview: URL.createObjectURL(blob) });
+      setUrlDraft("");
+      setShowUrl(false);
+    } catch (err) {
+      onError(err.message || "Could not process that image.");
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  function acceptUrl(raw) {
+    const value = raw.trim();
+    if (!value) return;
+    if (!validateIconUrl(value)) return onError("Image URLs must start with https://.");
+    onChange({ blob: null, remoteUrl: value, preview: value });
+    setShowUrl(false);
+  }
+
+  function onDrop(event) {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    if (disabled) return;
+
+    const file = Array.from(event.dataTransfer.files || []).find((f) => f.type.startsWith("image/"));
+    if (file) return acceptFile(file);
+
+    // Dragging an image from another browser tab drops a URL instead of a file.
+    const uri = (event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain") || "").split("\n")[0];
+    if (uri) return acceptUrl(uri);
+
+    onError("Drop an image file or an image link.");
+  }
+
+  function onPaste(event) {
+    if (disabled) return;
+    const file = Array.from(event.clipboardData?.files || []).find((f) => f.type.startsWith("image/"));
+    if (file) {
+      event.preventDefault();
+      return acceptFile(file);
+    }
+    const text = event.clipboardData?.getData("text");
+    if (text && /^https?:\/\//i.test(text.trim())) {
+      event.preventDefault();
+      acceptUrl(text);
+    }
+  }
+
+  function clearIcon() {
+    onChange({ ...EMPTY_ICON });
+    setUrlDraft("");
+  }
+
+  const hasIcon = Boolean(icon.preview);
+
+  return (
+    <div className="fd-icon-picker">
+      <span className="fd-icon-picker-label">Application icon <em>Optional</em></span>
+
+      <div className="fd-icon-picker-body">
+        <div
+          className={`fd-icon-drop ${dragging ? "dragging" : ""} ${hasIcon ? "has-icon" : ""}`}
+          role="button"
+          tabIndex={0}
+          aria-label="Upload an application icon"
+          onClick={() => !disabled && fileInput.current?.click()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              fileInput.current?.click();
+            }
+          }}
+          onPaste={onPaste}
+          onDragEnter={(event) => { event.preventDefault(); dragDepth.current += 1; setDragging(true); }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => { dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setDragging(false); }}
+          onDrop={onDrop}
+        >
+          {hasIcon ? (
+            <img
+              src={icon.preview}
+              alt="Selected application icon"
+              onError={() => {
+                onError("That image couldn't be loaded. Check the link or try another file.");
+                clearIcon();
+              }}
+            />
+          ) : (
+            <div className="fd-icon-drop-empty">
+              {processing ? <span className="fd-button-spinner" /> : <Icon name="image" size={24} />}
+              <span>{name?.trim() ? name.trim().slice(0, 1).toUpperCase() : ""}</span>
+            </div>
+          )}
+          {!hasIcon && <div className="fd-icon-drop-hint"><Icon name="upload" size={13} /></div>}
+          {dragging && <div className="fd-icon-drop-overlay">Drop to use</div>}
+        </div>
+
+        <div className="fd-icon-picker-copy">
+          <strong>{hasIcon ? "Looking good." : "Drag an image here"}</strong>
+          <small>
+            {hasIcon
+              ? icon.remoteUrl
+                ? "This link will be imported to Fades storage when you create the app."
+                : "Cropped to a square and uploaded to Fades storage when you create the app."
+              : "Or click to browse, paste an image, or use a link. PNG, JPG, WebP or GIF up to 10 MB."}
+          </small>
+
+          <div className="fd-icon-picker-actions">
+            <button type="button" className="fd-text-button" onClick={() => fileInput.current?.click()} disabled={disabled || processing}>
+              <Icon name="upload" size={14} /> {hasIcon ? "Replace" : "Upload"}
+            </button>
+            <button type="button" className="fd-text-button" onClick={() => setShowUrl((v) => !v)} disabled={disabled}>
+              <Icon name="link" size={14} /> Use a URL
+            </button>
+            {hasIcon && (
+              <button type="button" className="fd-text-button fd-text-danger" onClick={clearIcon} disabled={disabled}>
+                <Icon name="trash" size={14} /> Remove
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {showUrl && (
+        <div className="fd-icon-url-row">
+          <input
+            type="url"
+            autoFocus
+            value={urlDraft}
+            onChange={(event) => setUrlDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                acceptUrl(urlDraft);
+              } else if (event.key === "Escape") {
+                setShowUrl(false);
+              }
+            }}
+            placeholder="https://example.com/logo.png"
+          />
+          <button type="button" className="fd-secondary-button" onClick={() => acceptUrl(urlDraft)}>Use image</button>
+        </div>
+      )}
+
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+        hidden
+        onChange={(event) => {
+          acceptFile(event.target.files?.[0]);
+          event.target.value = "";
+        }}
+      />
+    </div>
+  );
 }
 
 function StatCard({ icon, label, value, detail }) {
@@ -290,7 +601,7 @@ function ApplicationRow({ client, index, onCopy, onDelete, expanded = false }) {
   return (
     <div className={`fd-app-row ${expanded ? "fd-app-row-expanded" : ""}`}>
       <div className="fd-app-identity">
-        <AppIcon name={client.name} index={index} />
+        <AppIcon name={client.name} index={index} src={client.iconUrl} />
         <div className="fd-app-identity-copy">
           <strong>
             <span className="fd-app-name">{client.name || "Untitled application"}</span>
@@ -568,11 +879,13 @@ export default function DeveloperPage() {
   const [query, setQuery] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [createStage, setCreateStage] = useState(""); // "", "icon", "app"
   const [createdClient, setCreatedClient] = useState(null);
   const [secretHidden, setSecretHidden] = useState(true);
   const [mobileNav, setMobileNav] = useState(false);
   const [confirm, setConfirm] = useState(null); // { type: "app" | "grant", item }
-  const [form, setForm] = useState({ name: "", redirectUris: "", isPublic: false });
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [icon, setIcon] = useState(EMPTY_ICON);
 
   /* ---------- session ---------- */
 
@@ -698,9 +1011,25 @@ export default function DeveloperPage() {
     setCreating(true);
 
     try {
+      // 1) Put the icon in R2 first so the app is created with its final URL.
+      let iconUrl = null;
+      if (icon.blob || icon.remoteUrl) {
+        setCreateStage("icon");
+        try {
+          iconUrl = icon.blob
+            ? await uploadIconBlob(icon.blob)
+            : await importIconFromUrl(icon.remoteUrl);
+        } catch (err) {
+          if (err.status === 401) return expireSession();
+          throw new Error(err.message || "Could not upload the icon. Remove it or try again.");
+        }
+      }
+
+      // 2) Create the application.
+      setCreateStage("app");
       const result = await request("/oauth/clients", {
         method: "POST",
-        body: { name, redirectUris, public: form.isPublic },
+        body: { name, redirectUris, public: form.isPublic, ...(iconUrl ? { iconUrl } : {}) },
       });
 
       if (result.status === 401) return expireSession();
@@ -710,17 +1039,20 @@ export default function DeveloperPage() {
       setCreatedClient({
         id: result.data.clientId,
         name,
+        iconUrl: result.data.iconUrl || iconUrl,
         secret: result.data.clientSecret || null,
         public: form.isPublic,
       });
       setSecretHidden(true);
       setShowCreate(false);
-      setForm({ name: "", redirectUris: "", isPublic: false });
+      setForm(EMPTY_FORM);
+      setIcon(EMPTY_ICON);
       await loadClients(true);
     } catch (err) {
       setError(err.message || "Could not create the application.");
     } finally {
       setCreating(false);
+      setCreateStage("");
     }
   }
 
@@ -768,8 +1100,15 @@ export default function DeveloperPage() {
   function openCreate() {
     setError("");
     setNotice("");
-    setForm({ name: "", redirectUris: "", isPublic: false });
+    setForm(EMPTY_FORM);
+    setIcon(EMPTY_ICON);
     setShowCreate(true);
+  }
+
+  function closeCreate() {
+    if (creating) return;
+    setShowCreate(false);
+    setIcon(EMPTY_ICON);
   }
 
   function goTo(id) {
@@ -907,7 +1246,7 @@ export default function DeveloperPage() {
         </header>
 
         <div className="fd-content">
-          {error && (
+          {error && !showCreate && (
             <div className="fd-alert fd-alert-error" role="alert">
               <Icon name="warning" size={18} /><span>{error}</span>
               <button onClick={() => setError("")} aria-label="Dismiss"><Icon name="close" size={15} /></button>
@@ -1088,7 +1427,7 @@ export default function DeveloperPage() {
               </div>
 
               <div className="fd-docs-grid">
-                <DocCard number="01" title="Register an application" description="Create an app and register its exact callback URLs. Choose public for browser or mobile apps (no secret), or confidential for server apps." icon="apps">
+                <DocCard number="01" title="Register an application" description="Create an app, add an icon, and register its exact callback URLs. Choose public for browser or mobile apps (no secret), or confidential for server apps." icon="apps">
                   <button className="fd-inline-link fd-button-link" onClick={() => { goTo("applications"); openCreate(); }}>
                     Create application <Icon name="arrow" size={14} />
                   </button>
@@ -1235,7 +1574,7 @@ token=ACCESS_OR_REFRESH_TOKEN`}</CodeSnippet>
                     {grants.map((grant, index) => (
                       <div className="fd-grant-row" key={grant.clientId}>
                         <div className="fd-app-identity">
-                          <AppIcon name={grant.name} index={index} />
+                          <AppIcon name={grant.name} index={index} src={grant.iconUrl} />
                           <div className="fd-app-identity-copy">
                             <strong>{grant.name}</strong>
                             <span>Connected {formatDate(grant.since)}</span>
@@ -1269,11 +1608,11 @@ token=ACCESS_OR_REFRESH_TOKEN`}</CodeSnippet>
 
       {/* ---------- create application ---------- */}
       {showCreate && (
-        <div className="fd-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCreate(false); }}>
+        <div className="fd-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreate(); }}>
           <section className="fd-modal" role="dialog" aria-modal="true" aria-labelledby="fd-create-title">
             <div className="fd-modal-top">
               <div className="fd-modal-icon"><Icon name="apps" size={22} /></div>
-              <button className="fd-icon-button" onClick={() => setShowCreate(false)} aria-label="Close dialog"><Icon name="close" size={18} /></button>
+              <button className="fd-icon-button" onClick={closeCreate} aria-label="Close dialog" disabled={creating}><Icon name="close" size={18} /></button>
             </div>
             <div className="fd-modal-title">
               <span className="fd-panel-kicker">NEW INTEGRATION</span>
@@ -1283,9 +1622,18 @@ token=ACCESS_OR_REFRESH_TOKEN`}</CodeSnippet>
             {error && (
               <div className="fd-alert fd-alert-error" role="alert">
                 <Icon name="warning" size={17} /><span>{error}</span>
+                <button type="button" onClick={() => setError("")} aria-label="Dismiss"><Icon name="close" size={15} /></button>
               </div>
             )}
             <form className="fd-create-form" onSubmit={createApplication}>
+              <IconPicker
+                name={form.name}
+                icon={icon}
+                onChange={setIcon}
+                onError={setError}
+                disabled={creating}
+              />
+
               <label>
                 <span>Application name</span>
                 <input autoFocus maxLength={LIMITS.nameLength} value={form.name} onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))} placeholder="e.g. My awesome app" required />
@@ -1316,9 +1664,13 @@ token=ACCESS_OR_REFRESH_TOKEN`}</CodeSnippet>
               </div>
 
               <div className="fd-modal-actions">
-                <button type="button" className="fd-secondary-button" onClick={() => setShowCreate(false)}>Cancel</button>
+                <button type="button" className="fd-secondary-button" onClick={closeCreate} disabled={creating}>Cancel</button>
                 <button type="submit" className="fd-primary-button" disabled={creating}>
-                  {creating ? <><span className="fd-button-spinner" /> Creating…</> : <><Icon name="plus" size={16} /> Create application</>}
+                  {creating ? (
+                    <><span className="fd-button-spinner" /> {createStage === "icon" ? "Uploading icon…" : "Creating…"}</>
+                  ) : (
+                    <><Icon name="plus" size={16} /> Create application</>
+                  )}
                 </button>
               </div>
             </form>
@@ -1330,7 +1682,11 @@ token=ACCESS_OR_REFRESH_TOKEN`}</CodeSnippet>
       {createdClient && (
         <div className="fd-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreatedClient(null); }}>
           <section className="fd-modal fd-created-modal" role="dialog" aria-modal="true" aria-labelledby="fd-created-title">
-            <div className="fd-created-check"><Icon name="check" size={27} /></div>
+            {createdClient.iconUrl ? (
+              <div className="fd-created-icon"><AppIcon name={createdClient.name} src={createdClient.iconUrl} size={64} /></div>
+            ) : (
+              <div className="fd-created-check"><Icon name="check" size={27} /></div>
+            )}
             <h2 id="fd-created-title">Application created</h2>
             <p className="fd-created-subtitle">{createdClient.name} has been registered with Fades.</p>
 
