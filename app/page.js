@@ -180,14 +180,14 @@ function Logo() {
           event.currentTarget.parentElement.classList.add("fd-logo-fallback");
         }}
       />
-      <span className="fd-logo-letter">F</span>
+      <span className="fd-logo-letter"></span>
     </span>
   );
 }
 
 function Avatar({ user, size = 32, className = "" }) {
   const [broken, setBroken] = useState(false);
-  const initial = userLabel(user).trim().slice(0, 1).toUpperCase() || "F";
+  const initial = userLabel(user).trim().slice(0, 1).toUpperCase() || "";
 
   return (
     <div
@@ -204,8 +204,8 @@ function Avatar({ user, size = 32, className = "" }) {
 }
 
 function AppIcon({ name, index = 0 }) {
-  const initial = (name || "F").trim().slice(0, 1).toUpperCase();
-  return <div className={`fd-app-icon fd-app-icon-${index % 5}`}>{initial || "F"}</div>;
+  const initial = (name || "").trim().slice(0, 1).toUpperCase();
+  return <div className={`fd-app-icon fd-app-icon-${index % 5}`}>{initial || ""}</div>;
 }
 
 function StatCard({ icon, label, value, detail }) {
