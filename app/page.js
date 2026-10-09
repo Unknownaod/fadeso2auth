@@ -293,7 +293,7 @@ function ApplicationRow({ client, index, onCopy, onDelete, expanded = false }) {
         <AppIcon name={client.name} index={index} />
         <div className="fd-app-identity-copy">
           <strong>
-            {client.name || "Untitled application"}
+            <span className="fd-app-name">{client.name || "Untitled application"}</span>
             <span className={`fd-badge ${client.public ? "fd-badge-blue" : ""}`}>
               {client.public ? "Public" : "Confidential"}
             </span>
