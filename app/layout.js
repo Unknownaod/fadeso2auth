@@ -12,8 +12,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Fades Mail",
-  description: "Your perfect mail source",
+  title: "Fades Developer Portal",
+  description: "Developer Portal",
 };
 
 export default function RootLayout({ children }) {
